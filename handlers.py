@@ -142,3 +142,4 @@ async def back_btn(callback: CallbackQuery):
                                     "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
                                     f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
                                     reply_markup=kb.after_reg)
+    
