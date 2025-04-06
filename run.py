@@ -9,7 +9,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from db import init_db
 
 
 bot = Bot(token=TOKEN)

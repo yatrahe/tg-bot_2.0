@@ -73,3 +73,11 @@ class Database:
         async with connect(self.db_file) as db:
             await db.execute("UPDATE users SET city = ? WHERE user_id = ?", (city, user_id,))
             await db.commit()
+    
+    async def get_user_by_id(self, user_id):
+        #Получение данных пользователя по ID
+        async with connect(self.db_file) as db:
+            db.row_factory = Row
+            cursor = await db.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+            user = await cursor.fetchone()
+            return user

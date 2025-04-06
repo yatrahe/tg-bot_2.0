@@ -111,3 +111,34 @@ async def process_city(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer("Произошла ошибка. Попробуйте еще раз.")
         print(f"Ошибка в process_city: {e}")
+
+#Обработка нажатия на кнопку Задания
+@router.callback_query(F.data == "tasks")
+async def tasks(callback: CallbackQuery):
+    await callback.answer("Выберите задание")
+    await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
+                                    "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
+
+#Обработка нажатия на кнопку Профиль
+@router.callback_query(F.data == "profile")
+async def show_profile(callback: CallbackQuery):
+    try:
+        user = await db.get_user_by_id(callback.from_user.id)
+        await callback.answer("")
+        await callback.message.edit_text(f"Добро пожаловать, {callback.from_user.full_name}!\n\n"
+                                    "Это ваш личный кабинет. Здесь Вы можете видеть Ваш город, баланс и количество выполненных заданий.\n\n"
+                                    f"🏙️Ваш город: {user["city"]}\n"
+                                    f"💰Ваш баланс: {user["balance"]}₽\n"
+                                    f"📌Количество выполненных заднаий: {user["amount_tasks"]}", reply_markup=kb.profile_menu)
+    except Exception as e:
+        await callback.message.answer("Произошла ошибка. Пожалуйста, попробуйте позже.")
+        print(f"Ошибка в show_profile: {e}")
+
+#Обработка нажатия на кнопку Назад
+@router.callback_query(F.data == "back")
+async def back_btn(callback: CallbackQuery):
+    await callback.answer("Главное меню")
+    await callback.message.edit_text(f"Добро пожаловать, {callback.from_user.full_name}!\n\nНа сегодня: {local_time}\n"
+                                    "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
+                                    f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
+                                    reply_markup=kb.after_reg)
