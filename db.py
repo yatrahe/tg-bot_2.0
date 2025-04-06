@@ -81,3 +81,25 @@ class Database:
             cursor = await db.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
             user = await cursor.fetchone()
             return user
+    
+    async def clear_tasks(self):
+        """Очищает таблицу заданий"""
+        async with connect(self.db_file) as db:
+            await db.execute("DELETE FROM tasks")
+            await db.commit()
+    
+    async def add_task(self, external_id, category, description, price, geo):
+        """Добавляет задание в БД"""
+        async with connect(self.db_file) as db:
+            await db.execute(
+                "INSERT INTO tasks (external_id, category, description, price, geo) VALUES (?, ?, ?, ?, ?)",
+                (external_id, category, description, price, geo)
+            )
+            await db.commit()
+    
+    async def get_admin_ids(self):
+        """Получает список ID администраторов"""
+        async with connect(self.db_file) as db:
+            cursor = await db.execute("SELECT user_id FROM users WHERE is_admin = 1")
+            admins = await cursor.fetchall()
+            return [admin[0] for admin in admins]

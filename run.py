@@ -1,4 +1,5 @@
 import asyncio
+from aiosqlite import connect, Row
 import logging
 
 from config import TOKEN
@@ -16,6 +17,9 @@ dp = Dispatcher()
 
 
 async def main() -> None:
+    async with connect("database.db") as db:
+        cursor = await db.execute("SELECT 1 FROM users WHERE is_admin = 1")
+        admin_exists = await cursor.fetchone()
     dp.include_router(router)
     await dp.start_polling(bot)
 

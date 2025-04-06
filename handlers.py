@@ -13,6 +13,8 @@ from db import Database, init_db
 
 from GEOapi import get_city_by_coordinates, get_city_data
 
+from gsheet import get_tasks_from_sheets
+
 
 router = Router()
 db = Database("database.db")
@@ -27,6 +29,7 @@ class Reg(StatesGroup):
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     try:
+        user = await db.get_user_by_id(message.from_user.id)
         await init_db()
         if not await db.user_exists(message.from_user.id):
             # Если пользователь отсутствует в БД, добавляем его и запрашиваем город
@@ -34,17 +37,24 @@ async def cmd_start(message: Message, state: FSMContext):
             await state.set_state(Reg.city)
             await message.answer(
                 "Введите Ваш город, или воспользуйтесь кнопкой ниже (только для телефона)",
-                reply_markup=kb.location_kb
-            )
+                reply_markup=kb.location_kb)
             return  # Прерываем выполнение, чтобы не показывать основное сообщение
-
-        # Если пользователь уже есть в БД, показываем основное меню
-        await message.answer(
+        
+        elif user["is_admin"]:
+                await message.answer(
+                    f"Добро пожаловать в Админ панель, {message.from_user.full_name}!\n\nНа сегодня: {local_time}\n"
+                    "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
+                    f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
+                    reply_markup=kb.admin_menu)
+        
+        elif await db.user_exists(message.from_user.id):
+            # Если пользователь уже есть в БД, показываем основное меню
+            await message.answer(
             f"Добро пожаловать, {message.from_user.full_name}!\n\nНа сегодня: {local_time}\n"
             "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
             f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
-            reply_markup=kb.after_reg
-        )
+            reply_markup=kb.after_reg)
+                
     except Exception as e:
         await message.answer("Произошла ошибка. Попробуйте позже.")
         print(f"Ошибка в cmd_start, {e}")
@@ -129,7 +139,8 @@ async def show_profile(callback: CallbackQuery):
                                     "Это ваш личный кабинет. Здесь Вы можете видеть Ваш город, баланс и количество выполненных заданий.\n\n"
                                     f"🏙️Ваш город: {user["city"]}\n"
                                     f"💰Ваш баланс: {user["balance"]}₽\n"
-                                    f"📌Количество выполненных заднаий: {user["amount_tasks"]}", reply_markup=kb.profile_menu)
+                                    f"📌Количество выполненных заднаий: {user["amount_tasks"]}\n\n"
+                                    "‼️Вывод средств доступен от 100₽", reply_markup=kb.profile_menu)
     except Exception as e:
         await callback.message.answer("Произошла ошибка. Пожалуйста, попробуйте позже.")
         print(f"Ошибка в show_profile: {e}")
@@ -153,3 +164,59 @@ async def back_to_tasks_btn(callback: CallbackQuery):
     await callback.answer("Выберите задание")
     await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
                                     "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
+    
+
+
+#АДМИНКА
+@router.callback_query(F.data == "admin_panel")
+async def admin_panel(callback: CallbackQuery):
+    """Отображает админ-панель"""
+    try:
+        admins = await db.get_admin_ids()
+        if callback.from_user.id not in admins:
+            await callback.answer("У вас нет прав доступа!")
+            return
+            
+        await callback.message.edit_text(
+            "Админ-панель",
+            reply_markup=kb.admin_menu
+        )
+    except Exception as e:
+        await callback.answer("Произошла ошибка!")
+        print(f"Ошибка в admin_panel: {e}")
+
+@router.callback_query(F.data == "update_tasks")
+async def update_tasks(callback: CallbackQuery):
+    """Обновляет задания из Google Sheets"""
+    try:
+        admins = await db.get_admin_ids()
+        if callback.from_user.id not in admins:
+            await callback.answer("У вас нет прав доступа!")
+            return
+            
+        await callback.answer("Обновление заданий...")
+        
+        # Получаем задания из Google Sheets
+        tasks = await get_tasks_from_sheets()
+        if not tasks:
+            await callback.message.answer("Не удалось получить задания из Google Sheets")
+            return
+            
+        # Очищаем старые задания
+        await db.clear_tasks()
+        
+        # Добавляем новые задания
+        for task in tasks:
+            await db.add_task(
+                task["external_id"],
+                task["category"],
+                task["description"],
+                task["price"],
+                task["geo"]
+            )
+            
+        await callback.message.answer(f"Успешно обновлено {len(tasks)} заданий!")
+        
+    except Exception as e:
+        await callback.message.answer("Произошла ошибка при обновлении заданий")
+        print(f"Ошибка в update_tasks: {e}")

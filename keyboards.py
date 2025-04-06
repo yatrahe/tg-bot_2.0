@@ -1,6 +1,12 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
+
+admin_menu = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🔄 Обновить задания", callback_data="update_tasks")],
+    [InlineKeyboardButton(text="◀️Назад", callback_data="back")]
+])
+
 after_reg = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📋Задания на отзывы", callback_data="tasks")],
     [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"), InlineKeyboardButton(text="📢Помощь", callback_data="help")]
@@ -28,3 +34,4 @@ accept_menu = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🟢Получить задание", callback_data="get_task")],
     [InlineKeyboardButton(text="◀️Назад", callback_data="back_to_tasks")]
 ])
+
