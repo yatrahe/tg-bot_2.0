@@ -142,4 +142,14 @@ async def back_btn(callback: CallbackQuery):
                                     "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
                                     f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
                                     reply_markup=kb.after_reg)
-    
+#Обработка нажатия на кнопку Яндекс карты
+@router.callback_query(F.data == "yamaps")
+async def yandex_btn(callback: CallbackQuery):
+    await callback.answer("")
+    await callback.message.edit_text("Задание Яндекс.карты📍\nСтоимость 1 отзыва: 65₽", reply_markup=kb.accept_menu)
+
+@router.callback_query(F.data == "back_to_tasks")
+async def back_to_tasks_btn(callback: CallbackQuery):
+    await callback.answer("Выберите задание")
+    await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
+                                    "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
