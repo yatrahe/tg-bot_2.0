@@ -42,10 +42,9 @@ class SheetMonitor:
         except Exception as e:
             print(f"Ошибка при проверке обновлений: {e}")
             return None
-    
 
+    """Запрос на вывод средств в Google Таблицу"""
     async def add_withdrawal_request(self, data):
-        """Добавляет запрос на вывод средств в Google Таблицу"""
         try:
             sheet = client.open_by_key(self.sheet_id).worksheet("Withdraws")
             sheet.append_row(data)
@@ -54,31 +53,47 @@ class SheetMonitor:
             print(f"Ошибка при добавлении запроса на вывод: {e}")
             return False
 
+""" Генерим хэш задания """
+def generate_task_hash(task_data: dict) -> str:
+    hash_string = f"{task_data['num']}_{task_data['Категория']}_{task_data['Описание задания']}_{task_data['Цена (руб.)']}_{task_data['GEO']}"
+    return hashlib.md5(hash_string.encode()).hexdigest()
+
+
+"""Получаем все задания из всех вкладок Google Sheets"""
 async def get_tasks_from_sheets():
-    """Получает все задания из всех вкладок Google Sheets"""
     try:
         sheet = client.open_by_key(sheet_id)
         tasks = []
         
-        # Список вкладок, которые нужно обработать
         worksheets = ["Яндекс Карты", "Google maps", "2GIS", "Flamp"]
         
         for worksheet_name in worksheets:
-            worksheet = sheet.worksheet(worksheet_name)
-            records = worksheet.get_all_records()
-            
-            for record in records:
-                if not all(key in record for key in ["num", "Категория", "Описание задания", "Цена (руб.)", "GEO"]):
-                    continue
+            try:
+                worksheet = sheet.worksheet(worksheet_name)
+                records = worksheet.get_all_records()
+                
+                for record in records:
+                    if not record.get('num') or not record.get('Описание задания'):
+                        continue  # Пропускаем пустые строки
+                        
+                    geo = record.get('GEO', 'Все города')
+                    if not geo:
+                        geo = 'Все города'
                     
-                task = {
-                    "external_id": f"{worksheet_name}_{record['num']}",
-                    "category": record["Категория"],
-                    "description": record["Описание задания"],
-                    "price": record["Цена (руб.)"],
-                    "geo": record["GEO"]
-                }
-                tasks.append(task)
+                    task = {
+                        "task_num": record["num"],
+                        "external_id": generate_task_hash(record),
+                        "category": worksheet_name,
+                        "description": record["Описание задания"],
+                        "price": record.get("Цена (руб.)", 0),
+                        "geo": geo
+                    }
+                    tasks.append(task)
+                    # print(f"Добавлено задание: {task}")  # Отладочное сообщение
+                    
+            except Exception as e:
+                print(f"Ошибка при обработке вкладки {worksheet_name}: {e}")
+                continue
                 
         return tasks
         

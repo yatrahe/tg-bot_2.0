@@ -25,12 +25,14 @@ local_time = datetime.now().strftime("%d.%m.%Y %H:%M")
 class Reg(StatesGroup):
     city = State()
 
+class TaskStates(StatesGroup):
+    waiting_for_screenshot = State()
+
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     try:
         user = await db.get_user_by_id(message.from_user.id)
-        await init_db()
         if not await db.user_exists(message.from_user.id):
             # Если пользователь отсутствует в БД, добавляем его и запрашиваем город
             await db.add_user(message.from_user.id, message.from_user.full_name)
@@ -129,6 +131,13 @@ async def tasks(callback: CallbackQuery):
     await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
                                     "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
 
+#Кнопка назад
+@router.callback_query(F.data == "back_to_tasks")
+async def back_to_tasks_btn(callback: CallbackQuery):
+    await callback.answer("Выберите задание")
+    await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
+                                    "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
+
 #Обработка нажатия на кнопку Профиль
 @router.callback_query(F.data == "profile")
 async def show_profile(callback: CallbackQuery):
@@ -153,18 +162,39 @@ async def back_btn(callback: CallbackQuery):
                                     "Цены за задания:\n\n📍Яндекс карты: 65₽\n📍Google карты: 35₽\n📍Flamp: 25₽\n📍2GIS: 25₽\n\n"
                                     f"Если у вас есть пожелания и предложения, а также вы нашли недочёты, пожалуйста, пишите @M_i_c_h_i_g_a_nnn.",
                                     reply_markup=kb.after_reg)
-#Обработка нажатия на кнопку Яндекс карты
+
+""" Обработка нажатий на категории заданий ----------------------------------------------------- """
 @router.callback_query(F.data == "yamaps")
 async def yandex_btn(callback: CallbackQuery):
     await callback.answer("")
-    await callback.message.edit_text("Задание Яндекс.карты📍\nСтоимость 1 отзыва: 65₽", reply_markup=kb.accept_menu)
+    await callback.message.edit_text(
+        "Задание Яндекс.карты📍\nСтоимость 1 отзыва: 65₽", 
+        reply_markup=kb.yamaps_accept
+    )
 
-@router.callback_query(F.data == "back_to_tasks")
-async def back_to_tasks_btn(callback: CallbackQuery):
-    await callback.answer("Выберите задание")
-    await callback.message.edit_text("В данном разделе вы можете выбрать любую площадку и оставить отзыв. "
-                                    "Отзывы оставляете на компании, которые выдает бот. Список заданий ограничен.", reply_markup=kb.tasks_menu)
-    
+@router.callback_query(F.data == "gmaps")
+async def google_btn(callback: CallbackQuery):
+    await callback.answer("")
+    await callback.message.edit_text(
+        "Задание Google Maps📍\nСтоимость 1 отзыва: 35₽", 
+        reply_markup=kb.gmaps_accept
+    )
+
+@router.callback_query(F.data == "2gis")
+async def gis_btn(callback: CallbackQuery):
+    await callback.answer("")
+    await callback.message.edit_text(
+        "Задание 2GIS📍\nСтоимость 1 отзыва: 25₽", 
+        reply_markup=kb.gis_accept
+    )
+
+@router.callback_query(F.data == "flamp")
+async def flamp_btn(callback: CallbackQuery):
+    await callback.answer("")
+    await callback.message.edit_text(
+        "Задание Flamp📍\nСтоимость 1 отзыва: 25₽", 
+        reply_markup=kb.flamp_accept
+    )
 
 
 #АДМИНКА
@@ -196,27 +226,276 @@ async def update_tasks(callback: CallbackQuery):
             
         await callback.answer("Обновление заданий...")
         
-        # Получаем задания из Google Sheets
         tasks = await get_tasks_from_sheets()
         if not tasks:
             await callback.message.answer("Не удалось получить задания из Google Sheets")
             return
             
-        # Очищаем старые задания
         await db.clear_tasks()
         
-        # Добавляем новые задания
+        added_count = 0
         for task in tasks:
-            await db.add_task(
-                task["external_id"],
-                task["category"],
-                task["description"],
-                task["price"],
-                task["geo"]
-            )
-            
-        await callback.message.answer(f"Успешно обновлено {len(tasks)} заданий!")
+            try:
+                await db.add_task(
+                    task["task_num"],
+                    task["external_id"],
+                    task["category"],
+                    task["description"],
+                    task["price"],
+                    task["geo"]
+                )
+                added_count += 1
+            except Exception as e:
+                print(f"Ошибка при добавлении задания {task}: {e}")
+                
+        await callback.message.answer(f"Успешно обновлено {added_count}/{len(tasks)} заданий!")
         
     except Exception as e:
         await callback.message.answer("Произошла ошибка при обновлении заданий")
         print(f"Ошибка в update_tasks: {e}")
+
+
+""" РАБОТА С ЗАДНАИЯМИ ПО ДЕЙСТВИЯМ И БЕЗ ------------------------------------------"""
+@router.callback_query(F.data.endswith("_get"))
+async def get_task(callback: CallbackQuery, state: FSMContext):
+    try:
+        category_map = {
+            "yamaps_get": ("Яндекс Карты", 65),
+            "gmaps_get": ("Google maps", 35),
+            "gis_get": ("2GIS", 25),
+            "flamp_get": ("Flamp", 25)
+        }
+        
+        category, price = category_map[callback.data]
+        
+        user = await db.get_user_by_id(callback.from_user.id)
+        if not user or not user['city']:
+            await callback.answer("Сначала укажите ваш город в профиле", show_alert=True)
+            return
+
+        task = await db.get_active_task_for_user(category, user['city'])
+        if not task:
+            await callback.answer("Нет доступных заданий в вашем городе", show_alert=True)
+            return
+
+        await db.deactivate_task(task['id'])
+        await db.add_user_task(callback.from_user.id, task['id'], 'active')
+
+        steps = extract_steps_from_description(task['description'])
+        
+        if steps:
+            await db.update_task_progress(
+                callback.from_user.id,
+                task['id'],
+                0,
+                '[]'
+            )
+            await callback.message.answer(
+                f"🔹 Шаг 1 из {len(steps)}\n\n{steps[0]}\n\n"
+                "После выполнения отправьте скриншот сюда",
+                reply_markup=kb.get_next_step_keyboard(task['id'])
+            )
+            await state.update_data(
+                current_task=task['id'],
+                current_step=0,
+                total_steps=len(steps),
+                category=category,
+                price=price
+            )
+        else:
+            await callback.message.answer(
+                f"📌 Задание:\n\n{task['description']}\n\n"
+                "После выполнения отправьте скриншот сюда"
+            )
+            await state.update_data(
+                current_task=task['id'],
+                is_simple_task=True,
+                category=category,
+                price=price
+            )
+        
+        await state.set_state(TaskStates.waiting_for_screenshot)
+        await callback.answer()
+        
+    except Exception as e:
+        print(f"Error in get_task: {e}")
+        await callback.answer("Произошла ошибка", show_alert=True)
+
+@router.message(TaskStates.waiting_for_screenshot, F.photo)
+async def handle_screenshot(message: Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        task_id = data.get('current_task')
+        
+        if data.get('is_simple_task'):
+            # Обычное задание - отправляем админу на проверку
+            admins = await db.get_admin_ids()
+            for admin_id in admins:
+                await message.bot.send_photo(
+                    admin_id,
+                    message.photo[-1].file_id,
+                    caption=f"Скриншот от пользователя {message.from_user.full_name} (@{message.from_user.username})\n"
+                            f"Задание ID: {task_id}",
+                    reply_markup=kb.get_task_confirmation_keyboard(task_id)
+            )
+            await message.answer("Скриншот отправлен на проверку. Ожидайте подтверждения.")
+            await state.clear()
+        else:
+            # Задание с шагами
+            current_step = data.get('current_step', 0)
+            total_steps = data.get('total_steps', 1)
+            
+            # Отправляем админу на проверку
+            admins = await db.get_admin_ids()
+            for admin_id in admins:
+                await message.bot.send_photo(
+                    admin_id,
+                    message.photo[-1].file_id,
+                    caption=f"Скриншот шага {current_step+1}/{total_steps} от пользователя {message.from_user.full_name}\n"
+                            f"Задание ID: {task_id}",
+                    reply_markup=kb.get_task_confirmation_keyboard(f"{task_id}_{current_step}")
+                )
+            
+            await message.answer(f"Скриншот шага {current_step+1} отправлен на проверку. Ожидайте подтверждения.")
+            
+    except Exception as e:
+        print(f"Error in handle_screenshot: {e}")
+        await message.answer("Произошла ошибка")
+
+@router.callback_query(F.data.startswith("confirm_"))
+async def handle_confirmation(callback: CallbackQuery):
+    try:
+        parts = callback.data.split("_")
+        task_id = int(parts[1])
+        
+        if len(parts) > 2:  # Подтверждение шага
+            step = int(parts[2])
+            user_task = await db.get_user_task_by_task_id(task_id)
+            
+            await db.complete_task_step(user_task['user_id'], task_id, step)
+            
+            # Проверяем, все ли шаги выполнены
+            progress = await db.get_user_task_progress(user_task['user_id'], task_id)
+            completed_steps = eval(progress['completed_steps'])
+            
+            if len(completed_steps) == progress['total_steps']:
+                # Все шаги выполнены
+                await db.delete_task(task_id)
+                await callback.message.answer("Все шаги задания выполнены и подтверждены!")
+            else:
+                await callback.message.answer(f"Шаг {step+1} подтверждён!")
+        else:
+            # Подтверждение простого задания
+            await db.delete_task(task_id)
+            await callback.message.answer("Задание подтверждено и удалено из системы!")
+        
+        await callback.answer()
+        
+    except Exception as e:
+        print(f"Error in handle_confirmation: {e}")
+        await callback.answer("Произошла ошибка")
+
+def extract_steps_from_description(description):
+    """Извлекает шаги из описания задания"""
+    steps = []
+    step_pattern = re.compile(r'Действие \d+: (.*?)(?=\n\nДействие \d+:|$)', re.DOTALL)
+    
+    matches = step_pattern.finditer(description)
+    for match in matches:
+        steps.append(match.group(1).strip())
+    
+    return steps if steps else None
+
+
+""" ЛЕТС ГОУ------------------------------------------------------------------ """
+# Обработчик принятия задания
+@router.callback_query(F.data == "get_task")
+async def accept_task(callback: CallbackQuery, state: FSMContext):
+    try:
+        # Определяем категорию задания из предыдущего сообщения
+        message_text = callback.message.text
+        if "Яндекс.карты" in message_text:
+            category = "Яндекс Карты"
+            price = 65
+        elif "Google Maps" in message_text:
+            category = "Google maps"
+            price = 35
+        elif "2GIS" in message_text:
+            category = "2GIS"
+            price = 25
+        elif "Flamp" in message_text:
+            category = "Flamp"
+            price = 25
+        else:
+            await callback.answer("Неизвестная категория заданий")
+            return
+
+        # Получаем данные пользователя
+        user = await db.get_user_by_id(callback.from_user.id)
+        if not user or not user['city']:
+            await callback.answer("Сначала укажите ваш город в профиле")
+            return
+
+        # Получаем активное задание для пользователя
+        task = await db.get_active_task_for_user(category, user['city'])
+        
+        if not task:
+            # Проверяем наличие заданий без привязки к городу
+            task = await db.get_active_task_for_user(category, "Все города")
+            if not task:
+                await callback.answer("Нет доступных заданий в вашем городе")
+                return
+
+        # Деактивируем задание
+        await db.deactivate_task(task['id'])
+        
+        # Создаем запись о взятом задании
+        await db.add_user_task(
+            user_id=callback.from_user.id,
+            task_id=task['id'],
+            status='active'
+        )
+
+        # Обработка задания (шаги или простое задание)
+        steps = extract_steps_from_description(task['description'])
+        
+        if steps:
+            # Задание с шагами
+            await db.update_task_progress(
+                user_id=callback.from_user.id,
+                task_id=task['id'],
+                current_step=0,
+                completed_steps='[]'
+            )
+            
+            await callback.message.answer(
+                f"🔹 Шаг 1 из {len(steps)}\n\n{steps[0]}\n\n"
+                f"После выполнения отправьте скриншот сюда",
+                reply_markup=kb.get_next_step_keyboard(task['id'])
+            )
+            await state.update_data(
+                current_task=task['id'],
+                current_step=0,
+                total_steps=len(steps),
+                category=category,
+                price=price
+            )
+        else:
+            # Обычное задание
+            await callback.message.answer(
+                f"📌 Задание:\n\n{task['description']}\n\n"
+                f"После выполнения отправьте скриншот сюда"
+            )
+            await state.update_data(
+                current_task=task['id'],
+                is_simple_task=True,
+                category=category,
+                price=price
+            )
+        
+        await state.set_state(TaskStates.waiting_for_screenshot)
+        await callback.answer()
+        
+    except Exception as e:
+        print(f"Error in accept_task: {e}")
+        await callback.answer("Произошла ошибка при получении задания")
